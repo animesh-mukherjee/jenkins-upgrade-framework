@@ -1,0 +1,142 @@
+# -----------------------------------------------------------------------------
+# Jenkins Helm Chart — values.yaml
+# Bump image.tag (and Chart.yaml appVersion) to upgrade Jenkins core.
+# Bump plugin versions in jenkins/plugins.txt, then re-run helm upgrade.
+# -----------------------------------------------------------------------------
+
+image:
+  repository: jenkins/jenkins
+  # Keep in sync with .jenkins-version and Chart.yaml appVersion
+  tag: "2.452.3-lts"
+  pullPolicy: IfNotPresent
+
+nameOverride: ""
+fullnameOverride: ""
+
+# -----------------------------------------------------------------------------
+# Controller credentials
+# Leave adminPassword empty to auto-generate a random 16-char password
+# (stored in a Secret; retrieve with: kubectl get secret jenkins -n <ns>
+#  -o jsonpath='{.data.jenkins-admin-password}' | base64 -d)
+# Set existingAdminSecret to the name of a pre-existing Secret and the chart
+# will not create one.
+# -----------------------------------------------------------------------------
+controller:
+  adminUser: admin
+  adminPassword: ""
+  existingAdminSecret: ""
+
+# -----------------------------------------------------------------------------
+# Service — NodePort works on KodeKloud, minikube, bare-metal without a cloud LB
+# Set nodePort to "" to let Kubernetes assign a random port.
+# -----------------------------------------------------------------------------
+service:
+  type: NodePort
+  port: 8080
+  agentPort: 50000
+  nodePort: "30000"
+  agentNodePort: "30050"
+
+# -----------------------------------------------------------------------------
+# Persistence — PVC for JENKINS_HOME
+# storageClass: "" uses the cluster's default StorageClass (works on most clusters)
+# -----------------------------------------------------------------------------
+persistence:
+  enabled: true
+  size: 8Gi
+  storageClass: ""
+  accessMode: ReadWriteOnce
+
+# -----------------------------------------------------------------------------
+# Resources — tune for your cluster size
+# KodeKloud playground nodes are typically 2 CPU / 4 GB RAM
+# -----------------------------------------------------------------------------
+resources:
+  requests:
+    memory: 512Mi
+    cpu: 500m
+  limits:
+    memory: 2Gi
+    cpu: "2"
+
+# Skip the setup wizard — JCasC handles all configuration
+javaOpts: "-Djenkins.install.runSetupWizard=false -Dhudson.model.DirectoryBrowserSupport.CSP="
+
+# JENKINS_HOME inside the container
+jenkinsHome: /var/jenkins_home
+
+# Path where the JCasC ConfigMap is mounted in the main container
+cascConfigMount: /var/jenkins_casc_config
+
+# -----------------------------------------------------------------------------
+# ServiceAccount
+# -----------------------------------------------------------------------------
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+# -----------------------------------------------------------------------------
+# Ingress — off by default; enable for production with a real hostname
+# -----------------------------------------------------------------------------
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  host: jenkins.example.com
+  tls: []
+
+# -----------------------------------------------------------------------------
+# Pod-level settings
+# -----------------------------------------------------------------------------
+podAnnotations: {}
+podSecurityContext:
+  fsGroup: 1000
+
+securityContext:
+  runAsUser: 1000
+  runAsGroup: 1000
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# -----------------------------------------------------------------------------
+# ngrok — expose Jenkins publicly via an ngrok tunnel (free tier supported)
+#
+# Enable:
+#   helm upgrade jenkins ./helm/jenkins -n jenkins \
+#     --set ngrok.enabled=true \
+#     --set ngrok.authToken=<your-token>
+#
+# Get your free auth token at https://dashboard.ngrok.com/get-started/your-authtoken
+#
+# After deployment, retrieve the public URL:
+#   kubectl port-forward svc/jenkins-ngrok-api 4040:4040 -n jenkins &
+#   curl -s http://localhost:4040/api/tunnels | python3 -c \
+#     "import sys,json; t=json.load(sys.stdin)['tunnels']; print(t[0]['public_url'])"
+# -----------------------------------------------------------------------------
+ngrok:
+  enabled: false
+
+  # One of: set authToken directly (fine for local dev / KodeKloud) OR point
+  # to an existing Secret that already has the key ngrok-auth-token.
+  authToken: ""
+  existingSecret: ""   # name of pre-existing Secret
+  existingSecretKey: ngrok-auth-token
+
+  image:
+    repository: ngrok/ngrok
+    tag: "3"
+    pullPolicy: IfNotPresent
+
+  # ngrok region — us | eu | ap | au | sa | jp | in
+  region: us
+
+  resources:
+    requests:
+      memory: 64Mi
+      cpu: 50m
+    limits:
+      memory: 128Mi
+      cpu: 200m

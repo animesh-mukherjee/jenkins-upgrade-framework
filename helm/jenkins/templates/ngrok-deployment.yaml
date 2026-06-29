@@ -1,0 +1,80 @@
+{{- if .Values.ngrok.enabled }}
+# ngrok tunnel — exposes the Jenkins service at a public HTTPS URL.
+# The public URL is dynamic (changes on restart) on free accounts.
+# Retrieve it via the ngrok local API on port 4040 (see NOTES.txt).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "jenkins.fullname" . }}-ngrok
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "jenkins.labels" . | nindent 4 }}
+    app.kubernetes.io/component: ngrok
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "jenkins.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: ngrok
+  template:
+    metadata:
+      labels:
+        {{- include "jenkins.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: ngrok
+    spec:
+      containers:
+        - name: ngrok
+          image: "{{ .Values.ngrok.image.repository }}:{{ .Values.ngrok.image.tag }}"
+          imagePullPolicy: {{ .Values.ngrok.image.pullPolicy }}
+          args:
+            - http
+            - "{{ include "jenkins.fullname" . }}:{{ .Values.service.port }}"
+            - --region={{ .Values.ngrok.region }}
+            - --log=stdout
+          env:
+            - name: NGROK_AUTHTOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ if .Values.ngrok.existingSecret }}{{ .Values.ngrok.existingSecret }}{{ else }}{{ include "jenkins.fullname" . }}-ngrok{{ end }}
+                  key: {{ .Values.ngrok.existingSecretKey }}
+          ports:
+            - name: ngrok-api
+              containerPort: 4040
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /api/tunnels
+              port: 4040
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /api/tunnels
+              port: 4040
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          {{- with .Values.ngrok.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+---
+# ClusterIP Service on port 4040 so you can kubectl port-forward to the ngrok API
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "jenkins.fullname" . }}-ngrok-api
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "jenkins.labels" . | nindent 4 }}
+    app.kubernetes.io/component: ngrok
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "jenkins.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: ngrok
+  ports:
+    - name: ngrok-api
+      port: 4040
+      targetPort: 4040
+      protocol: TCP
+{{- end }}

@@ -1,0 +1,14 @@
+apiVersion: v2
+name: jenkins
+description: Jenkins LTS controller — cloud-agnostic, JCasC-configured, plugin-managed
+type: application
+version: 0.1.0
+appVersion: "2.452.3-lts"
+keywords:
+  - jenkins
+  - ci
+  - cd
+sources:
+  - https://github.com/animesh-mukherjee/jenkins-upgrade-framework
+maintainers:
+  - name: Animesh Mukherjee

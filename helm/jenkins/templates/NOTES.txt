@@ -1,0 +1,68 @@
+Jenkins has been deployed!
+
+=== Access Jenkins ===
+
+{{- if eq .Values.service.type "NodePort" }}
+
+1. Get the node IP:
+   export NODE_IP=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[0].address}')
+
+2. Get the assigned port:
+   export NODE_PORT=$(kubectl get svc {{ include "jenkins.fullname" . }} \
+     -n {{ .Release.Namespace }} \
+     -o jsonpath='{.spec.ports[?(@.name=="http")].nodePort}')
+
+3. Open Jenkins:
+   echo "http://$NODE_IP:$NODE_PORT"
+
+{{- else if eq .Values.service.type "ClusterIP" }}
+
+1. Forward the port:
+   kubectl port-forward svc/{{ include "jenkins.fullname" . }} 8080:{{ .Values.service.port }} -n {{ .Release.Namespace }}
+
+2. Open http://localhost:8080
+
+{{- end }}
+
+=== Admin Credentials ===
+
+User: {{ .Values.controller.adminUser }}
+
+{{- if not .Values.controller.existingAdminSecret }}
+Password (auto-generated if you left adminPassword blank):
+  kubectl get secret {{ include "jenkins.fullname" . }} \
+    -n {{ .Release.Namespace }} \
+    -o jsonpath='{.data.jenkins-admin-password}' | base64 -d && echo
+{{- else }}
+Password is in your existing secret: {{ .Values.controller.existingAdminSecret }}
+{{- end }}
+
+=== Watch Rollout ===
+
+  kubectl rollout status deployment/{{ include "jenkins.fullname" . }} -n {{ .Release.Namespace }}
+
+=== Upgrading Jenkins ===
+
+  1. Bump image.tag in helm/jenkins/values.yaml (and Chart.yaml appVersion)
+  2. Update plugin versions in jenkins/plugins.txt (and helm/jenkins/files/plugins.txt)
+  3. helm upgrade {{ .Release.Name }} ./helm/jenkins -n {{ .Release.Namespace }}
+
+{{- if .Values.ngrok.enabled }}
+=== ngrok Public URL ===
+
+ngrok is running. Get the live public URL with:
+
+  kubectl port-forward svc/{{ include "jenkins.fullname" . }}-ngrok-api 4040:4040 \
+    -n {{ .Release.Namespace }} &
+
+  curl -s http://localhost:4040/api/tunnels \
+    | python3 -c "import sys,json; t=json.load(sys.stdin)['tunnels']; print(t[0]['public_url'])"
+
+The URL changes on every ngrok pod restart (free tier).
+Update jenkins.yaml → unclassified.location.url to match if you care about redirect correctness.
+
+{{- end }}
+
+=== Rollback ===
+
+  helm rollback {{ .Release.Name }} -n {{ .Release.Namespace }}

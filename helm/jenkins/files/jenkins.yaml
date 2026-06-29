@@ -1,10 +1,7 @@
 # Jenkins Configuration as Code (JCasC)
-# Loaded by the configuration-as-code plugin. The core version this config
-# targets is tracked separately in the repo-root file `.jenkins-version`
-# so the update checker can read it without parsing YAML semantics.
-#
-# When deployed via the Helm chart, JENKINS_ADMIN_USER and
-# JENKINS_ADMIN_PASSWORD are injected as env vars from the jenkins Secret.
+# Loaded automatically by the configuration-as-code plugin.
+# Environment variables JENKINS_ADMIN_USER and JENKINS_ADMIN_PASSWORD are
+# injected by the Helm chart from the jenkins Secret.
 jenkins:
   systemMessage: "Managed by jenkins-upgrade-framework"
   numExecutors: 2

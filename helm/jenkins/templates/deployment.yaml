@@ -1,0 +1,155 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "jenkins.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "jenkins.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  # Recreate ensures JENKINS_HOME PVC is released before the new pod claims it
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "jenkins.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "jenkins.selectorLabels" . | nindent 8 }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      serviceAccountName: {{ include "jenkins.serviceAccountName" . }}
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+
+      # ------------------------------------------------------------------
+      # Init container: pre-install all pinned plugins into JENKINS_HOME
+      # before Jenkins starts. On subsequent restarts the plugins are
+      # already present on the PVC so this step completes almost instantly.
+      # ------------------------------------------------------------------
+      initContainers:
+        - name: install-plugins
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              set -e
+              echo "Installing Jenkins plugins from plugins.txt..."
+              jenkins-plugin-cli \
+                --plugin-file /plugins-config/plugins.txt \
+                --plugins-dir {{ .Values.jenkinsHome }}/plugins \
+                --latest false
+              echo "Plugin installation complete."
+          volumeMounts:
+            - name: jenkins-home
+              mountPath: {{ .Values.jenkinsHome }}
+            - name: jenkins-config
+              mountPath: /plugins-config
+              readOnly: true
+          {{- with .Values.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          resources:
+            requests:
+              memory: 256Mi
+              cpu: 250m
+            limits:
+              memory: 1Gi
+              cpu: "1"
+
+      containers:
+        - name: jenkins
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- with .Values.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+            - name: agent
+              containerPort: 50000
+              protocol: TCP
+          env:
+            - name: JAVA_OPTS
+              value: {{ .Values.javaOpts | quote }}
+            - name: CASC_JENKINS_CONFIG
+              value: {{ .Values.cascConfigMount }}/jenkins.yaml
+            - name: JENKINS_ADMIN_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "jenkins.adminSecretName" . }}
+                  key: jenkins-admin-user
+            - name: JENKINS_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "jenkins.adminSecretName" . }}
+                  key: jenkins-admin-password
+          volumeMounts:
+            - name: jenkins-home
+              mountPath: {{ .Values.jenkinsHome }}
+            - name: jenkins-config
+              mountPath: {{ .Values.cascConfigMount }}
+              readOnly: true
+          # Plugin install on first boot takes 2–5 minutes; give it time
+          startupProbe:
+            httpGet:
+              path: /login
+              port: 8080
+            failureThreshold: 40
+            periodSeconds: 15
+          livenessProbe:
+            httpGet:
+              path: /login
+              port: 8080
+            initialDelaySeconds: 0
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 5
+          readinessProbe:
+            httpGet:
+              path: /login
+              port: 8080
+            initialDelaySeconds: 0
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          {{- with .Values.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+
+      volumes:
+        - name: jenkins-home
+          {{- if .Values.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "jenkins.fullname" . }}-home
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        - name: jenkins-config
+          configMap:
+            name: {{ include "jenkins.fullname" . }}-config
+
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

@@ -1,0 +1,106 @@
+name: Helm Upgrade — Jenkins
+
+on:
+  # Auto-trigger when values.yaml is updated on main (i.e. image.tag was bumped)
+  push:
+    branches: [main]
+    paths:
+      - helm/jenkins/values.yaml
+      - helm/jenkins/files/plugins.txt
+      - helm/jenkins/files/jenkins.yaml
+
+  # Manual trigger with configurable inputs
+  workflow_dispatch:
+    inputs:
+      release_name:
+        description: Helm release name
+        required: false
+        default: jenkins
+      namespace:
+        description: Kubernetes namespace
+        required: false
+        default: jenkins
+      dry_run:
+        description: Dry-run only (helm upgrade --dry-run)
+        type: boolean
+        required: false
+        default: false
+
+env:
+  RELEASE_NAME: ${{ github.event.inputs.release_name || 'jenkins' }}
+  NAMESPACE:    ${{ github.event.inputs.namespace    || 'jenkins' }}
+
+jobs:
+  helm-upgrade:
+    name: helm upgrade --install
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: "3.14.4"
+
+      # Write the base64-encoded kubeconfig from the repo secret
+      - name: Configure kubeconfig
+        env:
+          KUBECONFIG_B64: ${{ secrets.KUBECONFIG_B64 }}
+        run: |
+          mkdir -p ~/.kube
+          echo "$KUBECONFIG_B64" | base64 -d > ~/.kube/config
+          chmod 600 ~/.kube/config
+
+      - name: Helm lint
+        run: helm lint ./helm/jenkins
+
+      - name: Show diff (helm diff — informational)
+        run: |
+          helm plugin install https://github.com/databus23/helm-diff --version 3.9.6 2>/dev/null || true
+          helm diff upgrade "$RELEASE_NAME" ./helm/jenkins \
+            --namespace "$NAMESPACE" \
+            --allow-unreleased \
+            || true   # diff exits non-zero when changes exist; don't fail the job
+
+      - name: Helm upgrade (dry-run)
+        if: ${{ github.event.inputs.dry_run == 'true' }}
+        run: |
+          helm upgrade --install "$RELEASE_NAME" ./helm/jenkins \
+            --namespace "$NAMESPACE" \
+            --create-namespace \
+            --dry-run
+
+      - name: Helm upgrade (live)
+        if: ${{ github.event.inputs.dry_run != 'true' }}
+        run: |
+          helm upgrade --install "$RELEASE_NAME" ./helm/jenkins \
+            --namespace "$NAMESPACE" \
+            --create-namespace \
+            --atomic \
+            --timeout 10m \
+            --wait
+
+      - name: Rollout status
+        if: ${{ github.event.inputs.dry_run != 'true' }}
+        run: |
+          kubectl rollout status deployment/"$RELEASE_NAME" \
+            -n "$NAMESPACE" \
+            --timeout=10m
+
+      - name: Post summary
+        if: always()
+        run: |
+          IMAGE_TAG=$(grep 'tag:' helm/jenkins/values.yaml | head -1 | awk '{print $2}' | tr -d '"')
+          {
+            echo "## Helm Upgrade Summary"
+            echo ""
+            echo "| Key | Value |"
+            echo "|-----|-------|"
+            echo "| Release | \`$RELEASE_NAME\` |"
+            echo "| Namespace | \`$NAMESPACE\` |"
+            echo "| Image tag | \`$IMAGE_TAG\` |"
+            echo "| Dry-run | \`${{ github.event.inputs.dry_run || 'false' }}\` |"
+            echo "| Triggered by | \`${{ github.event_name }}\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
