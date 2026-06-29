@@ -1,0 +1,36 @@
+name: Check Jenkins Updates
+
+# Check-and-report only: this workflow never edits files or opens PRs.
+# It compares the pinned Jenkins core LTS + plugins against the latest
+# published versions and writes a report to the run's Step Summary.
+
+on:
+  workflow_dispatch:        # run on demand from the Actions tab
+    inputs:
+      fail_on_outdated:
+        description: "Fail the run (red check) if anything is outdated"
+        type: boolean
+        default: false
+  schedule:
+    - cron: "0 6 * * 1"     # also runs weekly, Mondays 06:00 UTC
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Report outdated core & plugins
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run update check
+        run: |
+          python scripts/check_updates.py \
+            ${{ (github.event_name == 'workflow_dispatch' && inputs.fail_on_outdated) && '--fail-on-outdated' || '' }}

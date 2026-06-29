@@ -1,0 +1,12 @@
+# Jenkins plugins pinned to specific versions.
+# Format:  <plugin-id>:<version>   (one per line)
+# Lines starting with # and blank lines are ignored.
+# This is the file your Jenkins controller installs from (jenkins-plugin-cli --plugin-file).
+configuration-as-code:1836.vccda4a909a_73
+git:5.2.1
+workflow-aggregator:596.v8c21c963d92d
+credentials:1337.v60b_d7b_c7b_c9f
+matrix-auth:3.2.1
+job-dsl:1.87
+blueocean:1.27.13
+docker-workflow:572.v950f58993843

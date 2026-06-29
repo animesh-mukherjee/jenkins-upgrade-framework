@@ -1,0 +1,12 @@
+# Jenkins Configuration as Code (JCasC)
+# Loaded by the configuration-as-code plugin. The core version this config
+# targets is tracked separately in the repo-root file `.jenkins-version`
+# so the update checker can read it without parsing YAML semantics.
+jenkins:
+  systemMessage: "Managed by jenkins-upgrade-framework"
+  numExecutors: 2
+  mode: NORMAL
+
+unclassified:
+  location:
+    url: "https://jenkins.example.com/"
